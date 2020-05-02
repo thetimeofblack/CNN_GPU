@@ -7,7 +7,22 @@
 import numpy as np 
 from saab import Saab
 from skimage.util import view_as_windows
-
+def poolImage(X,pool_win , method): 
+    X = view_as_windows(X,(1,pool_win,pool_win,1),(1,pool_win,pool_win,1))
+    X = X.reshape(X.shape[0],X.shape[1],X.shape[2],X.shape[3],-1)
+    X = method(X,axis = -1)
+    return X 
+def poolImage_batch(X, num_batches , pool_win, method):
+    batch_size = int(X.shape[0] / num_batches)
+    pooled = [] 
+    for i in range(num_batches-1):
+        print("batch :", i)
+        X_pool = poolImage(X[i*batch_size:(i+1)*batch_size],pool_win,method)
+    #transformed_tmp = transformed_tmp.reshape(S)
+        pooled.append(X_pool)
+    X_pool = poolImage(X[(num_batches-1)*batch_size:],pool_win,method)
+    pooled.append(X_pool)
+    return np.concatenate(pooled ,axis = 0) 
 class cwSaab():
     def __init__(self, depth=1, energyTH=0.01, SaabArgs=None, shrinkArgs=None, concatArg=None):
         self.par = {}
@@ -40,44 +55,39 @@ class cwSaab():
             saab.fit(X)
             print("fit finish")
         # batch_size = 10000
-        num_batches = 6
+        num_batches = 15
         batch_size = int(X.shape[0] / num_batches)
-        transformed = [] 
+        flag = False
+        transformed = None 
         dc = []
+        
         for i in range(num_batches-1):
             print("batch :", i)
-            X_tmp = X[i*batch_size:(i+1)*batch_size]
-            transformed_tmp, dc_tmp = saab.transform(X_tmp)
+            X[i*batch_size:(i+1)*batch_size], dc_tmp = saab.transform(X[i*batch_size:(i+1)*batch_size])
             #transformed_tmp = transformed_tmp.reshape(S)
-            transformed.append(transformed_tmp)
             dc.append(dc_tmp)
-        X_tmp = X[(num_batches-1)*batch_size:]
-        transformed_tmp, dc_tmp = saab.transform(X_tmp)
-        transformed.append(transformed_tmp)
+        X[(num_batches-1)*batch_size:], dc_tmp = saab.transform(X[(num_batches-1)*batch_size:])
         dc.append(dc_tmp)
         dc = np.concatenate(dc,axis =0 )
-        transformed = np.concatenate(transformed,axis =0 )
-        transformed = transformed.reshape(S)
+        X = X.reshape(S)
         # print(transformed.shape)
         print("current layer",layer)
-        pooled_transformed = []
-        num_batches = 6 
-        batch_size = int(transformed.shape[0] / num_batches)
-        if layer != 2:
-            for i in range(num_batches):
-                poolwin = shrinkArg['poolwin']
-                if i != num_batches-1:
-                    transformed_tmp = transformed[i*batch_size:(i+1)*batch_size,:,:,:]
-                else: 
-                    transformed_tmp = transformed[(num_batches-1)*batch_size:,:,:,:] 
-                # print("the batched transformed shape",transformed_tmp.shape)
-                transformed_tmp = view_as_windows(transformed_tmp,(1,poolwin,poolwin,1),(1,poolwin,poolwin,1))
-                transformed_tmp = transformed_tmp.reshape(transformed_tmp.shape[0],transformed_tmp.shape[1],transformed_tmp.shape[2],transformed_tmp.shape[3],-1)
-                transformed_tmp= shrinkArg['method'](transformed_tmp,axis=-1)
-                pooled_transformed.append(transformed_tmp)        
-            transformed = np.concatenate(pooled_transformed,axis =0)
-        print("shape of pooled X: ",transformed.shape)
-        return saab, transformed, dc
+        
+        #batch_size = int(X.shape[0] / num_batches)
+        #poolwin = shrinkArg['poolwin']
+        #X = view_as_windows(X,(1,poolwin,poolwin,1),(1,poolwin,poolwin,1))
+        #print(X.shape)
+        #X = X.reshape(X.shape[0],X.shape[1],X.shape[2],X.shape[3],-1)
+        #X = shrinkArg['method'](X,axis = -1)
+        print("shape before pooling", X.shape)
+        if layer!= 2 :
+            pool_win = shrinkArg['poolwin']
+            pool_method = shrinkArg['method']
+            num_batches = 6 
+            X = poolImage_batch(X, num_batches , pool_win, pool_method)
+            print("shape of pooled X: ",X.shape)
+        
+        return saab, X, dc
 
 
     def cwSaab_1_layer(self, X, train):
